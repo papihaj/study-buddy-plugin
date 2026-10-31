@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Api, Register } from 'claude-code'
 
-import type { Format, Note, Quiz, Verdict } from '../types'
+import type { FollowUp, Format, Note, Quiz, Verdict } from '../types'
 import { checkLink, parseFocus } from './focus'
 import { answerOf, flow } from './answer'
 import { appendNote, buildNote, toMarkdown } from './notes'
@@ -9,6 +9,7 @@ import { isSecretPath, redact } from './redact'
 
 const PANE = 'study-buddy'
 const CONTEXT_CHARS = 6000
+const PROJECT_CHARS = 2500
 const ANSWER_CHARS = 600
 
 const EMPTY: Quiz = {
@@ -24,6 +25,7 @@ const EMPTY: Quiz = {
   lines: [],
   feedback: '',
   lesson: '',
+  followUps: [],
   error: '',
   source: '',
   focus: '',
@@ -32,13 +34,13 @@ const EMPTY: Quiz = {
   next: '',
 }
 
-const quiz = atom({ plugin: 'study-buddy', key: 'quiz' } as const, EMPTY, { shape: 'quiz-mvp-5' })
+const quiz = atom({ plugin: 'study-buddy', key: 'quiz' } as const, EMPTY, { shape: 'quiz-mvp-6' })
 const format = atom({ plugin: 'study-buddy', key: 'format' } as const, 'free', { shape: 'format-1' })
 const asked = atom({ plugin: 'study-buddy', key: 'asked' } as const, [], { shape: 'asked-1' })
 const showSettings = atom({ plugin: 'study-buddy', key: 'showSettings' } as const, false, { shape: 'show-settings-1' })
 const sessionTokens = atom({ plugin: 'study-buddy', key: 'sessionTokens' } as const, 0, { shape: 'session-tokens-1' })
 
-const BUSY = { thinking: 'idle', grading: 'asking', teaching: 'answered' } as const
+const BUSY = { thinking: 'idle', grading: 'asking', teaching: 'answered', replying: 'taught' } as const
 const isBusy = (status: Quiz['status']): status is keyof typeof BUSY => status in BUSY
 
 const ASK_SYSTEM = `You are a professor who teaches software engineering well. Your student is a developer who just worked through the session below with a coding assistant. You write one review question that makes them retrieve and reason about the ideas behind that work, so they keep it.
@@ -78,12 +80,18 @@ If the answer is not Solid, end with the key idea in one plain sentence. If it i
 Do not ask the student anything: they cannot reply.
 At most 60 words in all. Plain text, no headings, no lists.`
 
-const LESSON_SYSTEM = `You are a kind, exact professor. Your student just missed part of a review question, and asked you to go deeper. You write a short micro-lesson on exactly the gap their answer shows, so they get it right next time.
+const LESSON_SYSTEM = `You are a kind, exact professor. Your student just missed part of a review question about the project they are building in the session below, and asked you to go deeper. You write a short micro-lesson on exactly the gap their answer shows, so they get it right next time.
 First, the core idea in plain words: what is true, and why.
+Then, for each specific technical term the lesson relies on (such as TTL or a race condition), at most three, one line on its own: "<term>: what it means, in a few plain words. In your project: why it matters here, naming the part of the session it touches."
 Then one concrete example that makes it click. Use a tiny code snippet only if it truly helps, at most 5 lines, on its own lines with no fences.
 End with the one thing to remember, in one plain sentence that starts with "Remember:".
-Do not repeat the question or the feedback. Do not ask the student anything: they cannot reply.
-At most 120 words in all. Plain text, no headings, no lists, no markdown.`
+Do not repeat the question or the feedback. Do not end with a question.
+At most 180 words in all. Plain text, no headings, no bullets, no markdown.`
+
+const FOLLOW_SYSTEM = `You are a kind, exact professor. Your student is going deeper on a review question about the project they are building in the session below, and asks you a follow-up. Answer exactly what they asked, in plain words.
+If you use a technical term they may not know, say what it means in a few words. Tie the answer to their project when that helps, naming the part of the session it touches.
+If the follow-up has nothing to do with the topic or the project, answer in one sentence and steer back.
+Do not end with a question. At most 100 words. Plain text, no headings, no bullets, no markdown.`
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -268,16 +276,36 @@ async function submitChoice($: Api) {
 
 const isMiss = (q: Quiz) => q.verdict === 'partly' || q.verdict === 'notYet'
 
+const projectOf = async ($: Api) => `Recent session:\n<session>\n${(await digest($)).text.slice(-PROJECT_CHARS)}\n</session>\n\n`
+
+async function askFollowUp($: Api, ask: string) {
+  const q: Quiz = await read($, quiz)
+  if (q.status !== 'taught' || q.lesson === '' || ask.trim() === '') return
+  await update($, quiz, (cur): Quiz => ({ ...cur, status: 'replying', lines: [], draft: '', error: '' }))
+  const earlier = q.followUps.slice(-3).map(f => `Student asked: ${f.ask}\nYou said: ${f.reply}`).join('\n\n')
+  const prompt = `${await projectOf($)}Question: ${q.question}\n\nStudent's answer: ${q.answer}\n\nFeedback they got: ${q.feedback}\n\nLesson you gave: ${q.lesson}\n\n${earlier === '' ? '' : `${earlier}\n\n`}Follow-up: ${ask}`
+  const reply = await haiku($, FOLLOW_SYSTEM, prompt, 300)
+  await update($, quiz, (cur): Quiz => ({
+    ...cur,
+    status: 'taught',
+    followUps: [...cur.followUps, { ask, reply: reply ?? 'Could not answer that one. Try asking again.' } satisfies FollowUp],
+  }))
+}
+
 async function goDeeper($: Api) {
   const q: Quiz = await read($, quiz)
   if (q.status !== 'answered' || !isMiss(q)) return
   await update($, quiz, (cur): Quiz => ({ ...cur, status: 'teaching', lesson: '', error: '' }))
   const right = q.format === 'choice' ? `\n\nRight answer: ${q.choices[q.correct] ?? ''}` : ''
-  const lesson = await haiku($, LESSON_SYSTEM, `Question: ${q.question}\n\nStudent's answer: ${q.answer}${right}\n\nFeedback they got: ${q.feedback}`, 350)
+  const project = await projectOf($)
+  const lesson = await haiku($, LESSON_SYSTEM, `${project}Question: ${q.question}\n\nStudent's answer: ${q.answer}${right}\n\nFeedback they got: ${q.feedback}`, 500)
   await update($, quiz, (cur): Quiz => ({
     ...cur,
     status: 'taught',
     lesson: lesson ?? '',
+    followUps: [],
+    lines: [],
+    draft: '',
     error: lesson === undefined ? 'Could not write a lesson this time.' : '',
   }))
 }
@@ -350,6 +378,34 @@ export const register: Register = on => {
     const busy = isBusy(q.status)
     const asking = q.status === 'asking'
     const typing = asking && q.format === 'free' && Input !== undefined
+    const following = q.status === 'taught' && q.lesson !== '' && Input !== undefined
+    const typed = (key: string, placeholder: string, label: string, send: (text: string) => void) =>
+      Input !== undefined && (
+        <Box marginTop={1} flexDirection="column">
+          <Text dimColor>{label}</Text>
+          <Box borderStyle="round" borderColor="claude" paddingX={1} flexDirection="column">
+            {q.lines.map((line, i) => (
+              <Text key={`line-${i}`}>{line}</Text>
+            ))}
+            <Input
+              key={key}
+              placeholder={placeholder}
+              rows={1}
+              autoFocus
+              submitLabel=""
+              value={q.draft}
+              onInput={(value: string) =>
+                void update($, quiz, (cur): Quiz => {
+                  const left = Math.max(0, ANSWER_CHARS - answerOf(cur, '').length)
+                  return { ...cur, ...flow(cur.lines, value.slice(0, left), room) }
+                })
+              }
+              onSubmit={(value: string) => send(answerOf(q, value))}
+            />
+          </Box>
+          {answerOf(q).length >= ANSWER_CHARS && <Text dimColor>That is as long as it can be.</Text>}
+        </Box>
+      )
     const width = Math.max(0, e.props.bodyColumns - 4)
     const rule = <Text dimColor>{'─'.repeat(width)}</Text>
     const room = Math.max(10, width - 6)
@@ -389,33 +445,8 @@ export const register: Register = on => {
               </Box>
             )}
             {asking && q.format === 'free' && Input === undefined && <Text dimColor>Free-text answers need the terminal or desktop app.</Text>}
-            {typing && Input !== undefined && (
-              <Box marginTop={1} flexDirection="column">
-                <Text dimColor>Your answer</Text>
-                <Box borderStyle="round" borderColor="claude" paddingX={1} flexDirection="column">
-                  {q.lines.map((line, i) => (
-                    <Text key={`line-${i}`}>{line}</Text>
-                  ))}
-                  <Input
-                    key={`answer-${q.question}`}
-                    placeholder="Type your answer"
-                    rows={1}
-                    autoFocus
-                    submitLabel=""
-                    value={q.draft}
-                    onInput={(value: string) =>
-                      void update($, quiz, (cur): Quiz => {
-                        const left = Math.max(0, ANSWER_CHARS - answerOf(cur, '').length)
-                        return { ...cur, ...flow(cur.lines, value.slice(0, left), room) }
-                      })
-                    }
-                    onSubmit={(value: string) => void gradeFree($, answerOf(q, value))}
-                  />
-                </Box>
-                {answerOf(q).length >= ANSWER_CHARS && <Text dimColor>That is as long as an answer can be.</Text>}
-              </Box>
-            )}
-            {(q.status === 'answered' || q.status === 'teaching' || q.status === 'taught') && (
+            {typing && typed(`answer-${q.question}`, 'Type your answer', 'Your answer', text => void gradeFree($, text))}
+            {(q.status === 'answered' || q.status === 'teaching' || q.status === 'taught' || q.status === 'replying') && (
               <Box flexDirection="column" marginTop={1}>
                 <Text dimColor>
                   {q.format === 'free' ? 'You said' : 'You picked'}: {q.answer}
@@ -431,16 +462,23 @@ export const register: Register = on => {
                 )}
               </Box>
             )}
-            {(q.status === 'grading' || q.status === 'teaching') && (
-              <Box marginTop={1}>
-                <Text dimColor>{q.status === 'grading' ? 'Checking your answer…' : 'Writing a short lesson…'}</Text>
-              </Box>
-            )}
-            {q.status === 'taught' && (
+            {(q.status === 'taught' || q.status === 'replying') && (
               <Box marginTop={1}>
                 <Text dimColor={q.lesson === ''}>{q.lesson || q.error}</Text>
               </Box>
             )}
+            {q.followUps.map((f, i) => (
+              <Box key={`follow-${i}`} flexDirection="column" marginTop={1}>
+                <Text dimColor>You asked: {f.ask}</Text>
+                <Text>{f.reply}</Text>
+              </Box>
+            ))}
+            {(q.status === 'grading' || q.status === 'teaching' || q.status === 'replying') && (
+              <Box marginTop={1}>
+                <Text dimColor>{q.status === 'grading' ? 'Checking your answer…' : q.status === 'teaching' ? 'Writing a short lesson…' : 'Thinking about your question…'}</Text>
+              </Box>
+            )}
+            {following && typed(`follow-${q.followUps.length}`, 'Ask a follow-up question', 'Still unsure? Ask a follow-up', text => void askFollowUp($, text))}
           </Box>
         )}
         {!isSettings && !busy && (
@@ -465,8 +503,13 @@ export const register: Register = on => {
                 Skip <Text dimColor>s</Text>
               </Button>
             )}
+            {following && (
+              <Button key="ask" variant="primary" onPress={() => void askFollowUp($, answerOf(q))}>
+                Ask
+              </Button>
+            )}
             {(q.status === 'answered' || q.status === 'taught') && (
-              <Button key="next" hotkey="n" variant="primary" onPress={() => void askQuestion($, true)}>
+              <Button key="next" hotkey="n" variant={following ? undefined : 'primary'} onPress={() => void askQuestion($, true)}>
                 Next question
               </Button>
             )}

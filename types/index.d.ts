@@ -2,8 +2,10 @@ export type Format = 'free' | 'choice'
 
 export type Verdict = 'solid' | 'partly' | 'notYet'
 
+export type FollowUp = { ask: string; reply: string }
+
 export type Quiz = {
-  status: 'idle' | 'thinking' | 'asking' | 'grading' | 'answered' | 'teaching' | 'taught' | 'error'
+  status: 'idle' | 'thinking' | 'asking' | 'grading' | 'answered' | 'teaching' | 'taught' | 'replying' | 'error'
   format: Format
   question: string
   choices: string[]
@@ -16,6 +18,7 @@ export type Quiz = {
   feedback: string
   verdict?: Verdict
   lesson: string
+  followUps: FollowUp[]
   error: string
   source: string
   focus: string

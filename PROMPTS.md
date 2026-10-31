@@ -115,22 +115,28 @@ Longest reply: 300 tokens.
 
 ## 3. Going deeper after a miss
 
-After a miss (a wrong pick, or a grade that opens with "Partly." or "Not yet."), the pane offers **Go deeper**. Pressing it makes one call that writes a short lesson on the gap. It never runs on its own.
+After a miss (a wrong pick, or a grade that opens with "Partly." or "Not yet."), the pane offers **Go deeper**. Pressing it makes one call that writes a short lesson on the gap. Each specific term in the lesson gets one line: what it means, and why it matters in your project. It never runs on its own.
 
 **System prompt** (`LESSON_SYSTEM`):
 
 ```text
-You are a kind, exact professor. Your student just missed part of a review question, and asked you to go deeper. You write a short micro-lesson on exactly the gap their answer shows, so they get it right next time.
+You are a kind, exact professor. Your student just missed part of a review question about the project they are building in the session below, and asked you to go deeper. You write a short micro-lesson on exactly the gap their answer shows, so they get it right next time.
 First, the core idea in plain words: what is true, and why.
+Then, for each specific technical term the lesson relies on (such as TTL or a race condition), at most three, one line on its own: "<term>: what it means, in a few plain words. In your project: why it matters here, naming the part of the session it touches."
 Then one concrete example that makes it click. Use a tiny code snippet only if it truly helps, at most 5 lines, on its own lines with no fences.
 End with the one thing to remember, in one plain sentence that starts with "Remember:".
-Do not repeat the question or the feedback. Do not ask the student anything: they cannot reply.
-At most 120 words in all. Plain text, no headings, no lists, no markdown.
+Do not repeat the question or the feedback. Do not end with a question.
+At most 180 words in all. Plain text, no headings, no bullets, no markdown.
 ```
 
 **User message:**
 
 ```text
+Recent session:
+<session>
+{the end of the session text, at most 2,500 characters}
+</session>
+
 Question: {the question}
 
 Student's answer: {the answer, at most 600 characters}
@@ -140,7 +146,43 @@ Right answer: {multiple choice only: the right choice}
 Feedback they got: {the feedback}
 ```
 
-Longest reply: 350 tokens.
+Longest reply: 500 tokens.
+
+## 4. Asking a follow-up
+
+Under the lesson, the pane has a box to ask a follow-up question. Each follow-up makes one call. You can ask as many as you like.
+
+**System prompt** (`FOLLOW_SYSTEM`):
+
+```text
+You are a kind, exact professor. Your student is going deeper on a review question about the project they are building in the session below, and asks you a follow-up. Answer exactly what they asked, in plain words.
+If you use a technical term they may not know, say what it means in a few words. Tie the answer to their project when that helps, naming the part of the session it touches.
+If the follow-up has nothing to do with the topic or the project, answer in one sentence and steer back.
+Do not end with a question. At most 100 words. Plain text, no headings, no bullets, no markdown.
+```
+
+**User message:**
+
+```text
+Recent session:
+<session>
+{the end of the session text, at most 2,500 characters}
+</session>
+
+Question: {the question}
+
+Student's answer: {the answer}
+
+Feedback they got: {the feedback}
+
+Lesson you gave: {the lesson}
+
+{the last 3 follow-ups and replies, if any}
+
+Follow-up: {what you asked, at most 600 characters}
+```
+
+Longest reply: 300 tokens.
 
 ## The teaching ideas behind the prompts
 
@@ -151,4 +193,4 @@ Longest reply: 350 tokens.
 - **Spreading practice across topics.** The "already asked" list pushes each question to a different concept.
 - **Misconceptions as wrong choices.** Wrong choices come from real misunderstandings, so a wrong pick shows what to fix.
 - **Specific feedback.** The grade names the exact gap and ends with the key idea. A solid answer ends with a related idea to review next instead, so getting it right still moves you forward.
-- **Worked examples on demand.** After a miss, a short explanation with one concrete example helps more than another question. It comes only when you ask, so it costs nothing when you do not need it.
+- **Worked examples on demand.** After a miss, a short explanation with one concrete example helps more than another question. It comes only when you ask, so it costs nothing when you do not need it. If it still does not click, you can ask a follow-up in your own words.
