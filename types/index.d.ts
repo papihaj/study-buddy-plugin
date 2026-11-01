@@ -44,11 +44,9 @@ declare module 'claude-code' {
     'study-buddy': {
       quiz: Shaped<Quiz>
       format: Shaped<Format>
-      asked: Shaped<string[]>
       showSettings: Shaped<boolean>
       sessionTokens: Shaped<number>
       paused: Shaped<boolean>
-      askedAt: Shaped<number>
     }
   }
 }
