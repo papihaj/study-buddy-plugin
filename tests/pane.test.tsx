@@ -103,3 +103,32 @@ test('pause holds questions, and a session with nothing new says so', async ($, 
   expect(await ui.find({ type: 'Text', text: /^Questions are paused/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('git commands stay out of the session Haiku sees, unless git is a focus area', async ($, on) => {
+  const prompts: string[] = []
+  let focus: string[] | undefined
+  const tools = [
+    { tool_use_id: 't1', tool: 'Bash', input: { command: 'git rebase origin/main' } },
+    { tool_use_id: 't2', tool: 'Bash', input: { command: 'cd /p && gh pr create --fill' } },
+    { tool_use_id: 't3', tool: 'Bash', input: { command: 'bun run test' } },
+  ]
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Added retry with backoff to the upload client. '.repeat(6), toolUses: tools }] }))
+  on('session.cwd', () => ({ value: '/p' }))
+  on('store.get', (_, e) => ({ value: e.key === 'focus' ? focus : undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('model.complete', (_, e) => {
+    prompts.push(e.prompt)
+    return { value: { text: '{"question": ""}', isAnswered: true, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'now' })
+  expect(prompts[0]).toContain('tool Bash: bun run test')
+  expect(prompts[0]).not.toContain('git rebase')
+  expect(prompts[0]).not.toContain('gh pr create')
+  focus = ['Git']
+  await ui.press({ key: 'now' })
+  expect(prompts[1]).toContain('git rebase')
+  await ui.unmount()
+})
