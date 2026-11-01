@@ -12,7 +12,7 @@
       "name": "study-buddy",
       "source": "./",
       "description": "Asks you about key terms in what you are building while Claude works, and saves them to your notes",
-      "version": "1.0.0"
+      "version": "1.1.0"
     }
   ]
 }
