@@ -19,8 +19,8 @@ How you teach:
 - The question must be answerable from understanding alone, in a sentence or a short paragraph (under 600 characters), so ask exactly one thing. If an idea needs an essay, ask about one part of it.
 - A question answerable by recalling one word is too shallow. Ask them to reason.
 - One question, one idea, under 40 words, plain language. Never reveal the answer in the question.
-- Pick a concept the developer has not just been asked about, so practice is spread across topics.
-- If every big idea in the session was already asked about, or the session has no real engineering idea in it, do not reach for a small one. Reply {"question": ""} instead.
+- Ask about something new: a concept the developer has not been asked about today, not a new angle on one they have.
+- If every big idea in the session was already asked about today, or the session has no real engineering idea in it, do not reach for a small one. Reply {"question": ""} instead.
 
 Speak to the developer directly as "you" and "your". Never call them "the student", "the developer", "the user" or "they".
 
@@ -35,8 +35,8 @@ Recent session:
 {the last 40 messages, at most 6,000 characters}
 </session>
 
-Already asked (pick a different concept or angle):
-{the last 10 questions, or "(none)"}
+Already asked today (ask about a different concept):
+{today's questions, each with its key term, at most 25, or "(none)"}
 
 Teaching move for this question: {one move from the list below}
 
@@ -86,7 +86,7 @@ Reply as {"question": "...", "choices": ["right", "wrong", "wrong", "wrong"], "e
 
 If Haiku replies with an empty question, the pane says there is nothing new worth asking yet and waits.
 
-Questions that come on their own wait for at least 6 new session messages since the last one, and stop while you have pressed **Pause questions**. **Ask me now** and **Next question** always ask.
+Questions come on their own at the start of each of your turns, unless you have pressed **Pause questions**. The first one can come right away.
 
 The plugin checks the source before showing it. It keeps the path only if a tool call in the session used that file, and keeps a line number only if the session's text or tool output contains that exact `path:line`. Otherwise it shows the path alone, or nothing.
 
@@ -202,7 +202,7 @@ Longest reply: 300 tokens.
 - **Elaborative questions.** "Why" and "how" questions make you connect a fact to what you already know.
 - **Transfer.** Using an idea in a new setting shows you understand it, not just that you remember the session.
 - **Bloom's levels.** The teaching moves go from explaining, to predicting and applying, to comparing and judging. The system prompt holds only the rules every question follows, and the move alone decides the kind of thinking, so a small model is never asked for several kinds at once.
-- **Spreading practice across topics.** The "already asked" list pushes each question to a different concept.
+- **Spreading practice across topics.** The "already asked today" list pushes each question to a concept you have not seen today, and when none is left, Study Buddy waits instead of asking about something small.
 - **Misconceptions as wrong choices.** Wrong choices come from real misunderstandings, so a wrong pick shows what to fix.
 - **Specific feedback.** The grade names the exact gap and ends with the key idea. A solid answer ends with a related idea to review next instead, so getting it right still moves you forward.
 - **Worked examples on demand.** After a miss, a short explanation with one concrete example helps more than another question. It comes only when you ask, so it costs nothing when you do not need it. If it still does not click, you can ask a follow-up in your own words.

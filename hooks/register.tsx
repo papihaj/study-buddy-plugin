@@ -11,7 +11,7 @@ const PANE = 'study-buddy'
 const CONTEXT_CHARS = 6000
 const PROJECT_CHARS = 2500
 const ANSWER_CHARS = 600
-const FRESH_MESSAGES = 6
+const ASKED_TODAY = 25
 const NOTHING_NEW = 'Nothing new worth asking about yet. Keep building, and a question will come.'
 
 const EMPTY: Quiz = {
@@ -38,10 +38,8 @@ const EMPTY: Quiz = {
 
 const quiz = atom({ plugin: 'study-buddy', key: 'quiz' } as const, EMPTY, { shape: 'quiz-mvp-6' })
 const format = atom({ plugin: 'study-buddy', key: 'format' } as const, 'free', { shape: 'format-1' })
-const asked = atom({ plugin: 'study-buddy', key: 'asked' } as const, [], { shape: 'asked-1' })
 const showSettings = atom({ plugin: 'study-buddy', key: 'showSettings' } as const, false, { shape: 'show-settings-1' })
 const paused = atom({ plugin: 'study-buddy', key: 'paused' } as const, false, { shape: 'paused-1' })
-const askedAt = atom({ plugin: 'study-buddy', key: 'askedAt' } as const, 0, { shape: 'asked-at-1' })
 const sessionTokens = atom({ plugin: 'study-buddy', key: 'sessionTokens' } as const, 0, { shape: 'session-tokens-1' })
 
 const BUSY = { thinking: 'idle', grading: 'asking', teaching: 'answered', replying: 'taught' } as const
@@ -59,8 +57,8 @@ How you teach:
 - The question must be answerable from understanding alone, in a sentence or a short paragraph (under ${ANSWER_CHARS} characters), so ask exactly one thing. If an idea needs an essay, ask about one part of it.
 - A question answerable by recalling one word is too shallow. Ask them to reason.
 - One question, one idea, under 40 words, plain language. Never reveal the answer in the question.
-- Pick a concept the developer has not just been asked about, so practice is spread across topics.
-- If every big idea in the session was already asked about, or the session has no real engineering idea in it, do not reach for a small one. Reply {"question": ""} instead.
+- Ask about something new: a concept the developer has not been asked about today, not a new angle on one they have.
+- If every big idea in the session was already asked about today, or the session has no real engineering idea in it, do not reach for a small one. Reply {"question": ""} instead.
 
 ${VOICE}
 
@@ -110,7 +108,7 @@ At most 100 words. Plain text, no headings, no bullets, no markdown.`
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
-type Digest = { text: string; paths: Set<string>; said: string; count: number }
+type Digest = { text: string; paths: Set<string>; said: string }
 
 async function digest($: Api): Promise<Digest> {
   const rows = await $.session.messages()
@@ -133,7 +131,7 @@ async function digest($: Api): Promise<Digest> {
     }
   }
   const text = lines.join('\n')
-  return { text: text.slice(-CONTEXT_CHARS), paths, said: said.join('\n'), count: rows.length }
+  return { text: text.slice(-CONTEXT_CHARS), paths, said: said.join('\n') }
 }
 
 function checkSource(given: unknown, { paths, said }: Digest): string {
@@ -156,6 +154,13 @@ const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 type Today = { day: string; tokens: number }
+
+type Asked = { day: string; questions: string[] }
+
+const askedToday = async ($: Api): Promise<string[]> => {
+  const saved = (await $.store.get('askedToday')) as Asked | undefined
+  return saved?.day === dayKey(new Date()) && Array.isArray(saved.questions) ? saved.questions : []
+}
 
 const tokensToday = async ($: Api): Promise<number> => {
   const saved = (await $.store.get('tokensToday')) as Today | undefined
@@ -215,7 +220,7 @@ async function askQuestion($: Api, isAsked?: true) {
   const fmt: Format = await read($, format)
   await update($, quiz, (): Quiz => ({ ...EMPTY, status: 'thinking', format: fmt }))
 
-  const previous: string[] = await read($, asked)
+  const previous = await askedToday($)
   const topics = await savedFocus($)
   const focusField = topics.length > 0 ? ', "focus": "...", "bridge": "..."' : ''
   const shape =
@@ -223,12 +228,11 @@ async function askQuestion($: Api, isAsked?: true) {
       ? `${CHOICE_RULES}\n${SOURCE_RULE}\n${TERM_RULE}\nReply as {"question": "...", "choices": ["right", "wrong", "wrong", "wrong"], "explanation": "...", "next": "...", "source": "...", "term": "...", "definition": "..."${focusField}}`
       : `${SOURCE_RULE}\n${TERM_RULE}\nReply as {"question": "...", "source": "...", "term": "...", "definition": "..."${focusField}}`
   const focus = topics.length > 0 ? `Areas the developer wants to grow in:\n${topics.join('\n')}\n${FOCUS_RULE}\n\n` : ''
-  const prompt = `Recent session:\n<session>\n${session.text}\n</session>\n\nAlready asked (pick a different concept or angle):\n${previous.slice(-10).join('\n') || '(none)'}\n\nTeaching move for this question: ${MOVES[previous.length % MOVES.length]}\n\n${focus}${shape}`
+  const prompt = `Recent session:\n<session>\n${session.text}\n</session>\n\nAlready asked today (ask about a different concept):\n${previous.join('\n') || '(none)'}\n\nTeaching move for this question: ${MOVES[previous.length % MOVES.length]}\n\n${focus}${shape}`
 
   const reply = await haiku($, ASK_SYSTEM, prompt, 400)
   const data = reply === undefined ? undefined : parseJson(reply)
   const question = str(data?.question)
-  await update($, askedAt, () => session.count)
   if (data !== undefined && question === '') {
     await update($, quiz, (q): Quiz => ({ ...q, status: 'idle', error: NOTHING_NEW }))
     return
@@ -240,7 +244,8 @@ async function askQuestion($: Api, isAsked?: true) {
   const given = Array.isArray(data?.choices) ? data.choices.map(String).slice(0, 4) : []
   const isChoice = fmt === 'choice' && given.length >= 2
   const order = given.map((_, i) => i).sort(() => Math.random() - 0.5)
-  await update($, asked, list => [...list, question].slice(-30))
+  const term = str(data?.term).trim()
+  await $.store.set('askedToday', { day: dayKey(new Date()), questions: [...previous, term === '' ? question : `${term}: ${question}`].slice(-ASKED_TODAY) } satisfies Asked)
   await update($, quiz, (q): Quiz => ({
     ...q,
     status: 'asking',
@@ -251,7 +256,7 @@ async function askQuestion($: Api, isAsked?: true) {
     explanation: str(data?.explanation),
     source: checkSource(data?.source, session),
     focus: checkLink(data?.focus, data?.bridge, question, topics),
-    term: str(data?.term).trim(),
+    term,
     definition: str(data?.definition).trim(),
     next: str(data?.next).trim(),
   }))
@@ -349,10 +354,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     const { status } = await read($, quiz)
     if (e.agentId === undefined && status !== 'asking' && !isBusy(status) && !(await read($, paused))) {
-      $.clock.after(0, async () => {
-        const fresh = (await $.session.messages()).length - (await read($, askedAt))
-        if (fresh < 0 || fresh >= FRESH_MESSAGES) void askQuestion($)
-      })
+      $.clock.after(0, () => void askQuestion($))
     }
     return next(e)
   })
