@@ -20,6 +20,7 @@ How you teach:
 - A question answerable by recalling one word is too shallow. Ask them to reason.
 - One question, one idea, under 40 words, plain language. Never reveal the answer in the question.
 - Ask about something new: a concept the developer has not been asked about today, not a new angle on one they have.
+- Git and GitHub work is never the topic: commits, rebasing, merging, branches, pull requests, force pushes or CI. This holds even when it is all the session did, unless git or GitHub is one of the areas the developer wants to grow in. The topic is always the project itself.
 - If every big idea in the session was already asked about today, or the session has no real engineering idea in it, do not reach for a small one. Reply {"question": ""} instead.
 
 Speak to the developer directly as "you" and "your". Never call them "the student", "the developer", "the user" or "they".
@@ -45,7 +46,7 @@ Teaching move for this question: {one move from the list below}
 {the format rules below}
 ```
 
-The session text holds each message's text, cut to 600 characters, and one line per tool call, such as `tool Edit: src/search.ts`. File paths are shown relative to the session's folder. Likely secrets are redacted first, and tool calls on files such as `.env` or `id_rsa` are left out.
+The session text holds each message's text, cut to 600 characters, and one line per tool call, such as `tool Edit: src/search.ts`. File paths are shown relative to the session's folder. Git and GitHub commands (`git ...`, `gh ...`) are left out too, unless one of your focus areas names git or GitHub. Likely secrets are redacted first, and tool calls on files such as `.env` or `id_rsa` are left out.
 
 **Teaching moves** (`MOVES`). The plugin uses them in turn, one per question, so the questions vary:
 

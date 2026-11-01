@@ -12,6 +12,8 @@ const CONTEXT_CHARS = 6000
 const PROJECT_CHARS = 2500
 const ANSWER_CHARS = 600
 const ASKED_TODAY = 25
+const GIT_COMMAND = /^(cd \S+ && )?(git|gh) /
+const GIT_FOCUS = /\b(git|github|version control)\b/i
 const NOTHING_NEW = 'Nothing new worth asking about yet. Keep building, and a question will come.'
 
 const EMPTY: Quiz = {
@@ -58,6 +60,7 @@ How you teach:
 - A question answerable by recalling one word is too shallow. Ask them to reason.
 - One question, one idea, under 40 words, plain language. Never reveal the answer in the question.
 - Ask about something new: a concept the developer has not been asked about today, not a new angle on one they have.
+- Git and GitHub work is never the topic: commits, rebasing, merging, branches, pull requests, force pushes or CI. This holds even when it is all the session did, unless git or GitHub is one of the areas the developer wants to grow in. The topic is always the project itself.
 - If every big idea in the session was already asked about today, or the session has no real engineering idea in it, do not reach for a small one. Reply {"question": ""} instead.
 
 ${VOICE}
@@ -110,7 +113,7 @@ const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
 type Digest = { text: string; paths: Set<string>; said: string }
 
-async function digest($: Api): Promise<Digest> {
+async function digest($: Api, skipGit = false): Promise<Digest> {
   const rows = await $.session.messages()
   const cwd = await $.session.cwd()
   const relative = (p: string) => (p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p)
@@ -126,6 +129,7 @@ async function digest($: Api): Promise<Digest> {
       const file = t.input.file_path ?? t.input.notebook_path
       if (typeof file === 'string') paths.add(relative(file))
       const target = typeof file === 'string' ? relative(file) : (t.input.command ?? t.input.pattern ?? '')
+      if (skipGit && GIT_COMMAND.test(String(target))) continue
       lines.push(`tool ${t.tool}: ${clip(redact(String(target)), 120)}`)
       if (typeof t.text === 'string') said.push(t.text.split(cwd + '/').join(''))
     }
@@ -212,7 +216,8 @@ async function askQuestion($: Api, isAsked?: true) {
     await update($, quiz, (): Quiz => ({ ...EMPTY, status: 'error', error: `You reached today's limit of ${limit.toLocaleString('en-US')} tokens. Run /buddy limit off to remove it.` }))
     return
   }
-  const session = await digest($)
+  const topics = await savedFocus($)
+  const session = await digest($, !topics.some(t => GIT_FOCUS.test(t)))
   if (session.text.length < 200) {
     await update($, quiz, (): Quiz => ({ ...EMPTY, status: 'error', error: 'Not enough session to ask about yet. A question comes once Claude has replied.' }))
     return
@@ -221,7 +226,6 @@ async function askQuestion($: Api, isAsked?: true) {
   await update($, quiz, (): Quiz => ({ ...EMPTY, status: 'thinking', format: fmt }))
 
   const previous = await askedToday($)
-  const topics = await savedFocus($)
   const focusField = topics.length > 0 ? ', "focus": "...", "bridge": "..."' : ''
   const shape =
     fmt === 'choice'
