@@ -21,6 +21,8 @@ While Claude works, Study Buddy asks you one question about a key term in what y
 3. Type your answer, or pick a choice.
 4. Missed one? Press `d` to go deeper. Each term in the lesson says why it matters in your project, and you can ask a follow-up question below it.
 
+Want to just build? Press `p` in the pane to pause questions, and again to resume.
+
 Key terms you learn are saved to `study-buddy-notes/notes.md`.
 
 | Command | What it does |

@@ -85,3 +85,21 @@ test('after a miss, go deeper explains terms and takes a follow-up question', as
   expect(prompts[2]).toContain('Follow-up: What about a shorter TTL?')
   await ui.unmount()
 })
+
+test('pause holds questions, and a session with nothing new says so', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Committed and pushed the branch. '.repeat(10), toolUses: [] }] }))
+  on('session.cwd', () => ({ value: '/p' }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('model.complete', () => ({ value: { text: '{"question": ""}', isAnswered: true, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'now' })
+  expect(await ui.find({ type: 'Text', text: /^Nothing new worth asking about yet/ })).toBeDefined()
+  await ui.press({ key: 'pause' })
+  expect(await ui.find({ type: 'Text', text: /^Questions are paused/ })).toBeDefined()
+  await ui.press({ key: 'pause' })
+  expect(await ui.find({ type: 'Text', text: /^Questions are paused/ })).toBeUndefined()
+  await ui.unmount()
+})

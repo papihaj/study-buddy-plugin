@@ -47,6 +47,8 @@ declare module 'claude-code' {
       asked: Shaped<string[]>
       showSettings: Shaped<boolean>
       sessionTokens: Shaped<number>
+      paused: Shaped<boolean>
+      askedAt: Shaped<number>
     }
   }
 }
