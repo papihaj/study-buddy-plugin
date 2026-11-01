@@ -19,6 +19,9 @@ While Claude works, Study Buddy asks you one question about a key term in what y
 1. Use Claude Code normally.
 2. A question shows up in the Study Buddy pane. Press `ctrl+x` then `Tab` to move into it.
 3. Type your answer, or pick a choice.
+4. Missed one? Press `d` to go deeper. Each term in the lesson says why it matters in your project, and you can ask a follow-up question below it.
+
+Want to just build? Press `p` in the pane to pause questions, and again to resume.
 
 Key terms you learn are saved to `study-buddy-notes/notes.md`.
 

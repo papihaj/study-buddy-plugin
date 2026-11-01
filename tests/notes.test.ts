@@ -17,6 +17,7 @@ const QUIZ: Quiz = {
   feedback: 'Solid. Redacting first means no partial secret survives a cut.',
   verdict: 'solid',
   lesson: '',
+  followUps: [],
   error: '',
   source: 'hooks/redact.ts',
   focus: '',
